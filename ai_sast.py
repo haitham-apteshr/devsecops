@@ -45,7 +45,12 @@ def main():
     
     for count, vuln in enumerate(vulnerabilities):
         vuln_type = vuln.get("type", vuln.get("rule", "Unknown Vulnerability"))
+        
+        # Clean up component path (remove SonarQube project prefix if present)
         vuln_code_location = vuln.get("component", vuln.get("file", "Unknown Location"))
+        if ":" in vuln_code_location:
+            vuln_code_location = vuln_code_location.split(":")[-1]
+            
         vuln_msg = vuln.get("message", "No description")
         
         user_prompt = f"""Analyze the following vulnerability:

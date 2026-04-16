@@ -129,7 +129,7 @@ pipeline {
                 // catchError marks stage UNSTABLE without aborting the pipeline.
                 // The pipeline always continues to security scan stages regardless.
                 catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                    timeout(time: 15, unit: 'MINUTES') {
+                    timeout(time: 5, unit: 'MINUTES') {
                         waitForQualityGate abortPipeline: false
                     }
                 }
@@ -147,6 +147,11 @@ pipeline {
                 catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
                     // Quick connectivity check first
                     bat 'python test_groq.py'
+                    
+                    echo "Fetching real issues from SonarQube API..."
+                    // Fetch real findings from SonarQube API into sonar-report.json
+                    bat 'curl -u %SONAR_TOKEN%: "http://localhost:9000/api/issues/search?componentKeys=devsecops-app&resolved=false" -o sonar-report.json'
+                    
                     bat 'python ai_sast.py'
                 }
             }
@@ -208,7 +213,7 @@ pipeline {
                 sleep time: 20, unit: 'SECONDS'
 
                 echo "Ensure application is accessible..."
-                bat 'curl -I http://localhost:3000 || curl -I http://localhost:80 || echo "Staging services are up"'
+                bat 'curl -I http://localhost:80 || curl -I http://localhost:5000 || echo "Staging services are up"'
             }
         }
 
@@ -218,7 +223,8 @@ pipeline {
         stage('12. DAST - OWASP ZAP (Docker)') {
             steps {
                 echo "12. Running OWASP ZAP baseline scan..."
-                bat 'docker run --rm --network=host -v "%WORKSPACE%":/zap/wrk/:rw -t owasp/zap2docker-stable zap-baseline.py -t http://host.docker.internal:3000 -r zap-report.html -J zap-report.json || echo "ZAP process identified findings (scan completed)"'
+                // Target the Frontend on Port 80
+                bat 'docker run --rm --network=host -v "%WORKSPACE%":/zap/wrk/:rw -t owasp/zap2docker-stable zap-baseline.py -t http://host.docker.internal:80 -r zap-report.html -J zap-report.json || echo "ZAP process identified findings (scan completed)"'
             }
         }
 
