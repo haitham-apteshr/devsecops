@@ -16,6 +16,10 @@ pipeline {
         // Retrieve SonarQube authentication token securely from Jenkins credentials
         SONAR_TOKEN = credentials('sonarqube-token')
 
+        // Groq API key for AI-powered SAST and DAST analysis
+        // Add this in Jenkins: Manage Jenkins -> Credentials -> Secret text -> ID: groq-api-key
+        GROQ_API_KEY = credentials('groq-api-key')
+
         // Define Docker image tags for consistent building and scanning
         BACKEND_IMAGE = 'devsecops-backend:latest'
         FRONTEND_IMAGE = 'devsecops-frontend:latest'
@@ -141,6 +145,8 @@ pipeline {
                 // FIX: Wrapped in catchError - if Groq API key is missing or unreachable,
                 // the stage shows UNSTABLE but does NOT abort the pipeline.
                 catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    // Quick connectivity check first
+                    bat 'python test_groq.py'
                     bat 'python ai_sast.py'
                 }
             }
