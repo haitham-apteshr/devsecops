@@ -124,10 +124,12 @@ pipeline {
         stage('7. Quality Gate') {
             steps {
                 echo "7. Waiting for SonarQube to return Quality Gate status..."
-                // Increased timeout to 10 min - SonarQube server needs time to process the report.
-                // abortPipeline: false so a slow Quality Gate doesn't kill the whole pipeline.
-                timeout(time: 10, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: false
+                // catchError: if SonarQube CE is slow/stuck, mark UNSTABLE and continue
+                // instead of aborting the entire pipeline.
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    timeout(time: 10, unit: 'MINUTES') {
+                        waitForQualityGate abortPipeline: false
+                    }
                 }
             }
         }
