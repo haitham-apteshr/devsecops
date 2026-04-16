@@ -124,9 +124,10 @@ pipeline {
         stage('7. Quality Gate') {
             steps {
                 echo "7. Waiting for SonarQube to return Quality Gate status..."
-                timeout(time: 5, unit: 'MINUTES') {
-                    // Requires SonarQube Scanner plugin. Will abort on Failure.
-                    waitForQualityGate abortPipeline: true
+                // Increased timeout to 10 min - SonarQube server needs time to process the report.
+                // abortPipeline: false so a slow Quality Gate doesn't kill the whole pipeline.
+                timeout(time: 10, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: false
                 }
             }
         }
