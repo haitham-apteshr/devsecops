@@ -54,6 +54,29 @@ def main():
     if not vulnerabilities:
         vulnerabilities = raw_data if isinstance(raw_data, list) else []
 
+    # Sort vulnerabilities by risk (High > Medium > Low > Informational)
+    def get_risk_score(vuln):
+        # riskcode: 3=High, 2=Medium, 1=Low, 0=Info
+        riskcode = vuln.get("riskcode")
+        if riskcode is not None:
+            try:
+                # Use negative so High (3) sorts to the top (smallest value)
+                return -int(riskcode) 
+            except:
+                pass
+        
+        # Fallback to text matching
+        riskdesc = str(vuln.get("riskdesc", vuln.get("risk", ""))).lower()
+        if "high" in riskdesc: return -3
+        if "medium" in riskdesc: return -2
+        if "low" in riskdesc: return -1
+        return 0
+
+    vulnerabilities.sort(key=get_risk_score)
+    
+    # Limit analysis to the top 15 issues to keep AI response times fast and reduce token usage
+    vulnerabilities = vulnerabilities[:15]
+
     results = []
     
     for count, vuln in enumerate(vulnerabilities):
