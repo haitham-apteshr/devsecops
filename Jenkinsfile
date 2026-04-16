@@ -110,7 +110,9 @@ pipeline {
                       -Dsonar.sources=. ^
                       -Dsonar.host.url=http://localhost:9000 ^
                       -Dsonar.login=%SONAR_TOKEN% ^
-                      -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/*.test.js,**/*.test.jsx,**/test/**
+                      -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/*.test.js,**/*.test.jsx,**/test/** ^
+                      -Dsonar.javascript.node.maxspace=2048 ^
+                      -Dsonar.javascript.environments=browser,node
                     """
                 }
             }
