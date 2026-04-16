@@ -62,6 +62,8 @@ pipeline {
                 }
                 // FIX: Remove conflicting PyFPDF and fpdf packages before installing requirements
                 bat 'pip uninstall pypdf fpdf -y || echo "pypdf or fpdf not installed, skipping"'
+                // FIX: Because uninstalling fpdf can break fpdf2's namespace, force reinstall it.
+                bat 'pip install --force-reinstall fpdf2'
                 // Install Python dependencies for AI Services
                 bat 'pip install -r requirements-ai.txt'
             }
