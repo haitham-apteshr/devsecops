@@ -3,7 +3,7 @@ pipeline {
 
     // Declare required tools for the Jenkins environment
     tools {
-        nodejs 'node20'
+        nodejs 'node24'
         jdk 'JDK21'
     }
 
