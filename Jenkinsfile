@@ -227,8 +227,11 @@ pipeline {
         stage('12. DAST - OWASP ZAP (Docker)') {
             steps {
                 echo "12. Running OWASP ZAP baseline scan..."
-                // Target the Frontend on Port 80
-                bat 'docker run --rm --network=host -v "%WORKSPACE%":/zap/wrk/:rw -t owasp/zap2docker-stable zap-baseline.py -t http://host.docker.internal:80 -r zap-report.html -J zap-report.json || echo "ZAP process identified findings (scan completed)"'
+                // Target the Frontend on Port 80 using the modern ZAP image registry
+                // catchError ensures that if ZAP finds vulnerabilities (returns non-zero), the pipeline proceeds to AI analysis
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    bat 'docker run --rm --network=host -v "%WORKSPACE%":/zap/wrk/:rw -t zaproxy/zap-stable zap-baseline.py -t http://host.docker.internal:80 -r zap-report.html -J zap-report.json'
+                }
             }
         }
 
