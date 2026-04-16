@@ -99,20 +99,19 @@ pipeline {
         // -------------------------------------------------------------
         stage('6. SAST - SonarQube Scan') {
             steps {
-                echo "6. Running SonarQube scan using Jenkins-managed SonarQube Scanner..."
-                // Uses the SonarQube Scanner tool configured in Jenkins Global Tool Configuration
-                // and the SonarQube server configured in Jenkins > Configure System
+                echo "6. Running SonarQube scan via npx sonar-scanner..."
+                // Uses npx to run sonar-scanner without requiring a Jenkins tool installation
+                // SonarQube is running as a Docker container on localhost:9000
                 withSonarQubeEnv('SonarQube') {
-                    script {
-                        def scannerHome = tool 'SonarScanner'
-                        bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" ^\
-                          -Dsonar.projectKey=devsecops-app ^\
-                          -Dsonar.projectName=\"DevSecOps Application\" ^\
-                          -Dsonar.sources=. ^\
-                          -Dsonar.host.url=http://host.docker.internal:9000 ^\
-                          -Dsonar.token=%SONAR_TOKEN% ^\
-                          -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/*.test.js,**/*.test.jsx,**/test/**"
-                    }
+                    bat """
+                    npx sonar-scanner ^
+                      -Dsonar.projectKey=devsecops-app ^
+                      -Dsonar.projectName="DevSecOps Application" ^
+                      -Dsonar.sources=. ^
+                      -Dsonar.host.url=http://localhost:9000 ^
+                      -Dsonar.login=%SONAR_TOKEN% ^
+                      -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/*.test.js,**/*.test.jsx,**/test/**
+                    """
                 }
             }
         }
