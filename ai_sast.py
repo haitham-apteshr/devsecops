@@ -40,6 +40,19 @@ def main():
         vulnerabilities = vulnerabilities["issues"]
     elif not isinstance(vulnerabilities, list):
         vulnerabilities = []
+
+    # Sort vulnerabilities by type (Vulnerability > Bug > Code Smell)
+    type_priority = {
+        "VULNERABILITY": 1,
+        "SECURITY_HOTSPOT": 2,
+        "BUG": 3,
+        "CODE_SMELL": 4
+    }
+    
+    vulnerabilities.sort(key=lambda x: type_priority.get(str(x.get("type", "")).upper(), 5))
+    
+    # Limit analysis to the top 15 issues to keep AI response times fast and reduce token usage
+    vulnerabilities = vulnerabilities[:15]
     
     results = []
     

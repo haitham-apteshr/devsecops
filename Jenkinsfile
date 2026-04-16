@@ -60,8 +60,8 @@ pipeline {
                 dir('frontend') {
                     bat 'npm install'
                 }
-                // FIX: Remove conflicting PyFPDF package before installing requirements
-                bat 'pip uninstall pypdf -y || echo "pypdf not installed, skipping"'
+                // FIX: Remove conflicting PyFPDF and fpdf packages before installing requirements
+                bat 'pip uninstall pypdf fpdf -y || echo "pypdf or fpdf not installed, skipping"'
                 // Install Python dependencies for AI Services
                 bat 'pip install -r requirements-ai.txt'
             }
@@ -126,11 +126,15 @@ pipeline {
             steps {
                 echo "7. Checking SonarQube Quality Gate (non-blocking)..."
                 // FIX: SonarQube CE is slow on this machine.
-                // catchError marks stage UNSTABLE without aborting the pipeline.
+                // Use a script block with try/catch to properly prevent timeout from failing the stage
                 // The pipeline always continues to security scan stages regardless.
-                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                    timeout(time: 5, unit: 'MINUTES') {
-                        waitForQualityGate abortPipeline: false
+                script {
+                    try {
+                        timeout(time: 5, unit: 'MINUTES') {
+                            waitForQualityGate abortPipeline: false
+                        }
+                    } catch (err) {
+                        unstable("Quality Gate timeout or error: ${err.getMessage()}")
                     }
                 }
             }
@@ -149,8 +153,8 @@ pipeline {
                     bat 'python test_groq.py'
                     
                     echo "Fetching real issues from SonarQube API..."
-                    // Fetch real findings from SonarQube API into sonar-report.json
-                    bat 'curl -u %SONAR_TOKEN%: "http://localhost:9000/api/issues/search?componentKeys=devsecops-app&resolved=false" -o sonar-report.json'
+                    // Fetch real findings from SonarQube API into sonar-report.json (prioritize target types)
+                    bat 'curl -s -u %SONAR_TOKEN%: "http://localhost:9000/api/issues/search?componentKeys=devsecops-app&resolved=false&types=VULNERABILITY,BUG,CODE_SMELL" -o sonar-report.json'
                     
                     bat 'python ai_sast.py'
                 }
