@@ -15,7 +15,7 @@ pipeline {
     environment {
         // Retrieve SonarQube authentication token securely from Jenkins credentials
         SONAR_TOKEN = credentials('sonarqube-token')
-        
+
         // Define Docker image tags for consistent building and scanning
         BACKEND_IMAGE = 'devsecops-backend:latest'
         FRONTEND_IMAGE = 'devsecops-frontend:latest'
@@ -56,6 +56,8 @@ pipeline {
                 dir('frontend') {
                     bat 'npm install'
                 }
+                // FIX: Remove conflicting PyFPDF package before installing requirements
+                bat 'pip uninstall pypdf -y || echo "pypdf not installed, skipping"'
                 // Install Python dependencies for AI Services
                 bat 'pip install -r requirements-ai.txt'
             }
@@ -68,11 +70,9 @@ pipeline {
             steps {
                 echo "4. Building React frontend and preparing backend..."
                 dir('frontend') {
-                    // Build production artifacts
                     bat 'npm run build'
                 }
                 dir('backend') {
-                    // Backend preparation (if Babel or TypeScript is used)
                     echo "Backend code prepared."
                 }
             }
@@ -88,8 +88,7 @@ pipeline {
                     bat 'npm test'
                 }
                 dir('frontend') {
-                    // Set non-interactive CI flag for React test runner
-                    bat 'set CI=true&& npm test'
+                    bat 'set CI=true && npm test'
                 }
             }
         }
@@ -100,8 +99,6 @@ pipeline {
         stage('6. SAST - SonarQube Scan') {
             steps {
                 echo "6. Running SonarQube scan via npx sonar-scanner..."
-                // Uses npx to run sonar-scanner without requiring a Jenkins tool installation
-                // SonarQube is running as a Docker container on localhost:9000
                 withSonarQubeEnv('SonarQube') {
                     bat """
                     npx sonar-scanner ^
@@ -123,11 +120,12 @@ pipeline {
         // -------------------------------------------------------------
         stage('7. Quality Gate') {
             steps {
-                echo "7. Waiting for SonarQube to return Quality Gate status..."
-                // catchError: if SonarQube CE is slow/stuck, mark UNSTABLE and continue
-                // instead of aborting the entire pipeline.
+                echo "7. Checking SonarQube Quality Gate (non-blocking)..."
+                // FIX: SonarQube CE is slow on this machine.
+                // catchError marks stage UNSTABLE without aborting the pipeline.
+                // The pipeline always continues to security scan stages regardless.
                 catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                    timeout(time: 10, unit: 'MINUTES') {
+                    timeout(time: 15, unit: 'MINUTES') {
                         waitForQualityGate abortPipeline: false
                     }
                 }
@@ -140,8 +138,11 @@ pipeline {
         stage('8. AI SAST Analysis') {
             steps {
                 echo "8. Executing custom AI SAST script..."
-                // This script yields: risk level, vulnerability explanation, and recommended fixes
-                bat 'python ai_sast.py'
+                // FIX: Wrapped in catchError - if Groq API key is missing or unreachable,
+                // the stage shows UNSTABLE but does NOT abort the pipeline.
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    bat 'python ai_sast.py'
+                }
             }
         }
 
@@ -151,7 +152,6 @@ pipeline {
         stage('9. Build Docker Images') {
             steps {
                 echo "9. Building Docker images for Backend and Frontend explicitly..."
-                // Explicitly tag images so Trivy can reference them easily
                 bat "docker build -t %BACKEND_IMAGE% ./backend"
                 bat "docker build -t %FRONTEND_IMAGE% ./frontend"
             }
@@ -163,9 +163,11 @@ pipeline {
         stage('10. Container Security Scan') {
             steps {
                 echo "10. Running Trivy container security scan (Windows native binary)..."
-                // Dynamically fetch the latest Trivy release from GitHub API
+                // FIX: Use Join-Path to build trivy path - avoids the \t tab-escape bug
+                // that occurs when .\trivy.exe is inside a Groovy string literal.
                 powershell '''
-                    if (-Not (Test-Path "trivy.exe")) {
+                    $trivyExe = Join-Path $PWD.Path "trivy.exe"
+                    if (-Not (Test-Path $trivyExe)) {
                         Write-Host "Fetching latest Trivy version from GitHub..."
                         $release = Invoke-RestMethod -Uri "https://api.github.com/repos/aquasecurity/trivy/releases/latest" -UseBasicParsing
                         $version = $release.tag_name.TrimStart("v")
@@ -177,7 +179,7 @@ pipeline {
                     } else {
                         Write-Host "Trivy already exists, skipping download."
                     }
-                    & ".\trivy.exe" --version
+                    & $trivyExe --version
                 '''
                 // Scan images - exit-code 0 reports findings without failing the pipeline
                 bat 'trivy.exe image --severity HIGH,CRITICAL --exit-code 0 --format table %BACKEND_IMAGE%'
@@ -192,11 +194,10 @@ pipeline {
             steps {
                 echo "11. Deploying Staging environment via docker-compose..."
                 bat 'docker-compose up -d --build'
-                
+
                 echo "Waiting for services to become responsive..."
                 sleep time: 15, unit: 'SECONDS'
-                
-                // Validate accessibility
+
                 echo "Ensure application is accessible..."
                 bat 'curl -I http://localhost:3000 || curl -I http://localhost:80 || echo "Staging services are up"'
             }
@@ -208,7 +209,6 @@ pipeline {
         stage('12. DAST - OWASP ZAP (Docker)') {
             steps {
                 echo "12. Running OWASP ZAP baseline scan..."
-                // Maps the active workspace to save zap-report.html and zap-report.json. Allows exit code overriding so pipeline completes stage.
                 bat 'docker run --rm --network=host -v "%WORKSPACE%":/zap/wrk/:rw -t owasp/zap2docker-stable zap-baseline.py -t http://host.docker.internal:3000 -r zap-report.html -J zap-report.json || echo "ZAP process identified findings (scan completed)"'
             }
         }
@@ -219,8 +219,11 @@ pipeline {
         stage('13. AI DAST Analysis') {
             steps {
                 echo "13. Executing custom AI DAST script..."
-                // Reads zap-report, outputs validated vulnerabilities, exploitation suggestions, remediation advice
-                bat 'python ai_dast.py'
+                // FIX: Wrapped in catchError - if Groq API key is missing or unreachable,
+                // the stage shows UNSTABLE but does NOT abort the pipeline.
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    bat 'python ai_dast.py'
+                }
             }
         }
 
@@ -231,7 +234,7 @@ pipeline {
             steps {
                 echo "14. Archiving test artifacts (Sonar results, ZAP reports, AI output)..."
                 archiveArtifacts artifacts: 'zap-report.html, *.json, *.txt, .scannerwork/report-task.txt', allowEmptyArchive: true
-                
+
                 echo "Pipeline reporting complete. Check artifacts for detailed vulnerabilities, severity levels, and summary."
             }
         }
@@ -243,6 +246,9 @@ pipeline {
     post {
         success {
             echo "==== SUCCESS: Pipeline completed. No severe vulnerabilities identified. ===="
+        }
+        unstable {
+            echo "==== UNSTABLE: Pipeline completed with warnings (AI/Quality Gate issues). Check logs. ===="
         }
         failure {
             echo "==== FAILURE: Pipeline aborted. Review security scans or build logs. ===="
