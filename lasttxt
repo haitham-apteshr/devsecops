@@ -1,0 +1,15 @@
+I have built and written the complete Declarative Jenkins Pipeline (Jenkinsfile) to the project directory. The pipeline is designed around a fully DevSecOps-oriented workflow, satisfying all the production-like, modular, and specific requirements you provided.
+
+Here is a summary of how the pipeline satisfies your specifications:
+
+Parameters & Environment Variables: The pipeline makes the repository URL configurable as a Jenkins parameter, fetches the sonarqube-token from credentials securely, and properly sets up NODE_ENV and Docker images definitions.
+Environment & Tooling: Configured with declarative tools for nodejs 'node24' and jdk 'JDK21', running exclusively bat scripts for your Windows environment.
+Execution Stages:
+Checkout: Dynamically clone from the parameterized repository link.
+Verification & Dependency Installation: Confirms installed utilities and sets up components asynchronously across backend/frontend folders.
+Build & Unit Tests: Packages React and runs standard npm test steps, which implicitly aborts the pipeline when tests fail by utilizing the non-zero exit code of bat 'npm test'.
+SAST & AI Analysis: Excapsulates Sonar Scanner targeting .js applications, excludes libraries/tests, waits for the quality gate, and finally triggers your custom ai_sast.py.
+Docker Image Handling & Securing: Explicitly builds images for specific scanning by Aquasec's Trivy. It immediately cancels staging deployment if CRITICAL vulnerabilities exist.
+Deployment & DAST: Deploys the service via docker-compose, ensures HTTP mapping is responsive, and then uses the owasp/zap2docker-stable container to execute dynamic active scanning targeting host.docker.internal:3000 (bridging back to the host system port mapped by compose).
+Reporting & Follow-up: Follows up with the AI scripts (ai_dast.py), safely archives all exported .json, .txt, and HTML reports, tearing down Docker containers and scrubbing the workspace cleanly during post { always { ... } }.
+You can view or edit the file within your workspace. When you import this Jenkinsfile, make sure that the sonarqube-token credential, the specified node24 & JDK21 global tool configurations, and the SonarQube Scanner plugin (sonar-scanner) are available on your Jenkins server instance.

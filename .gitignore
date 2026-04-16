@@ -1,0 +1,11 @@
+node_modules/
+__pycache__/
+*.pyc
+.env
+.scannerwork/
+.DS_Store
+build/
+dist/
+coverage/
+*-report.json
+zap-report.html
