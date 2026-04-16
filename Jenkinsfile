@@ -199,10 +199,13 @@ pipeline {
         stage('11. Deploy to Staging (Docker Compose)') {
             steps {
                 echo "11. Deploying Staging environment via docker-compose..."
-                bat 'docker-compose up -d --build'
+                // FIX: Force-remove stale named containers from previous runs.
+                // The DB uses a fixed container_name which conflicts if not cleaned.
+                bat 'docker rm -f devsecops_db devsecops_backend devsecops_frontend 2>nul & exit 0'
+                bat 'docker-compose up -d --build --remove-orphans'
 
                 echo "Waiting for services to become responsive..."
-                sleep time: 15, unit: 'SECONDS'
+                sleep time: 20, unit: 'SECONDS'
 
                 echo "Ensure application is accessible..."
                 bat 'curl -I http://localhost:3000 || curl -I http://localhost:80 || echo "Staging services are up"'
@@ -261,7 +264,10 @@ pipeline {
         }
         always {
             echo "==== CLEANUP: Tearing down containers and wiping workspace... ===="
-            bat 'docker-compose down'
+            // --volumes removes named volumes, --remove-orphans catches stale containers
+            // 'exit 0' ensures cleanup never fails the build result
+            bat 'docker-compose down --volumes --remove-orphans 2>nul & exit 0'
+            bat 'docker rm -f devsecops_db devsecops_backend devsecops_frontend 2>nul & exit 0'
             cleanWs()
         }
     }
