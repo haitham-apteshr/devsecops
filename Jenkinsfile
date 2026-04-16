@@ -172,7 +172,7 @@ pipeline {
                     } else {
                         Write-Host "Trivy already exists, skipping download."
                     }
-                    .\trivy.exe --version
+                    & ".\trivy.exe" --version
                 '''
                 // Scan images - exit-code 0 reports findings without failing the pipeline
                 bat 'trivy.exe image --severity HIGH,CRITICAL --exit-code 0 --format table %BACKEND_IMAGE%'
