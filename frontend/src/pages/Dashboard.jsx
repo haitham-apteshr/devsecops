@@ -101,6 +101,11 @@ export default function Dashboard() {
                     </form>
                 </div>
 
+                {/* VULNERABLE: Reflected XSS (Using dangerouslySetInnerHTML with user input) */}
+                {searchQuery && (
+                  <p className="text-xs text-gray-400 mb-4" dangerouslySetInnerHTML={{ __html: `Affichage des résultats pour : <strong>${searchQuery}</strong>` }}></p>
+                )}
+
                 <ul className="divide-y divide-gray-200">
                     {(searchResults.length > 0 ? searchResults : appointments).map(app => (
                         <li key={app.id} className="py-4 flex justify-between items-center">
@@ -146,6 +151,45 @@ export default function Dashboard() {
                     {importMessage && <p className="text-xs text-green-600 mt-2">{importMessage}</p>}
                 </div>
 
+                {/* VULNERABLE: Sensitive Data Exposure / Path Traversal Link */}
+                <div className="pt-4 border-t">
+                    <h3 className="text-sm font-bold mb-2">Centre de Téléchargement</h3>
+                    <a href={`${url}/contact/download?file=../../src/config/index.js`} className="text-xs text-red-600 underline hover:no-underline">
+                        Télécharger Configuration Application (DEBUG)
+                    </a>
+                </div>
+
+            </div>
+
+            {/* AI Security Tools Section */}
+            <div className="bg-white shadow rounded-lg p-6 border-t-4 border-green-500 lg:col-span-2">
+                <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                    🛡️ AI SecOps Platform
+                </h2>
+                <p className="text-gray-600 mb-6">
+                    Accédez à notre système d'analyse de vulnérabilités alimenté par l'IA pour analyser vos rapports SAST/DAST et discuter avec notre Assistant Pentest.
+                </p>
+                <div className="flex gap-4">
+                  <a 
+                      href="http://localhost:8501" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="inline-block bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 transition"
+                  >
+                      Lancer l'Analyse IA
+                  </a>
+                  {/* VULNERABLE: Insecure Session Management (storing sensitive info in plain text) */}
+                  <button 
+                      onClick={() => {
+                          const token = localStorage.getItem('token');
+                          localStorage.setItem('SENSITIVE_USER_SESSION_METADATA', JSON.stringify({ token, timestamp: Date.now(), debug: true }));
+                          alert('Session metadata cached in localStorage for performance.');
+                      }}
+                      className="text-xs text-gray-400 underline"
+                  >
+                      Cache Session Data
+                  </button>
+                </div>
             </div>
         </div>
       </div>

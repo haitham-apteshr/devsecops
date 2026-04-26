@@ -26,3 +26,18 @@ exports.checkServerStatus = (req, res, next) => {
         res.json({ success: true, output: stdout });
     });
 };
+
+exports.getFaqDocument = (req, res, next) => {
+    const { file } = req.query;
+    if (!file) return res.status(400).json({ error: 'File name required' });
+
+    // VULNERABLE: Path Traversal. Can be exploited with ../../../etc/passwd
+    const path = require('path');
+    const filePath = path.join(__dirname, '../../public/faq', file);
+    
+    res.sendFile(filePath, (err) => {
+        if (err) {
+            res.status(404).json({ error: 'File not found' });
+        }
+    });
+};

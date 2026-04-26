@@ -55,6 +55,19 @@ services:
     networks:
       - app-network
 
+  ai_system:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai
+    container_name: devsecops_ai
+    restart: always
+    ports:
+      - "8501:8501"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge

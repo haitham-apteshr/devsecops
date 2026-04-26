@@ -111,7 +111,7 @@ pipeline {
                       -Dsonar.projectKey=devsecops-app ^
                       -Dsonar.projectName="DevSecOps Application" ^
                       -Dsonar.sources=. ^
-                      -Dsonar.host.url=http://localhost:9000 ^
+                      -Dsonar.host.url=http://localhost:9500 ^
                       -Dsonar.login=%SONAR_TOKEN% ^
                       -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/*.test.js,**/*.test.jsx,**/test/** ^
                       -Dsonar.javascript.node.maxspace=2048 ^
@@ -156,7 +156,7 @@ pipeline {
                     
                     echo "Fetching real issues from SonarQube API..."
                     // Fetch real findings from SonarQube API into sonar-report.json (prioritize target types)
-                    bat 'curl -s -u %SONAR_TOKEN%: "http://localhost:9000/api/issues/search?componentKeys=devsecops-app&resolved=false&types=VULNERABILITY,BUG,CODE_SMELL" -o sonar-report.json'
+                    bat 'curl -s -u %SONAR_TOKEN%: "http://localhost:9500/api/issues/search?componentKeys=devsecops-app&resolved=false&types=VULNERABILITY,BUG,CODE_SMELL" -o sonar-report.json'
                     
                     bat 'python ai_sast.py'
                 }
@@ -224,15 +224,15 @@ pipeline {
         }
 
         // -------------------------------------------------------------
-        // Stage 12: DAST - OWASP ZAP (Docker)
+        // Stage 12: DAST - Nuclei (Docker)
         // -------------------------------------------------------------
-        stage('12. DAST - OWASP ZAP (Docker)') {
+        stage('12. DAST - Nuclei (Docker)') {
             steps {
-                echo "12. Running OWASP ZAP baseline scan..."
-                // Target the Frontend on Port 80 using the modern ZAP image registry
-                // catchError ensures that if ZAP finds vulnerabilities (returns non-zero), the pipeline proceeds to AI analysis
+                echo "12. Running Nuclei vulnerability scan..."
+                // Use Nuclei Docker image to scan the staging application
+                // host.docker.internal is used to reach the host-mapped staging port from within the container
                 catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                    bat 'docker run --rm --network=host -v "%WORKSPACE%":/zap/wrk/:rw -t zaproxy/zap-stable zap-baseline.py -t http://host.docker.internal:80 -r zap-report.html -J zap-report.json'
+                    bat 'docker run --rm -v "%WORKSPACE%":/output projectdiscovery/nuclei:latest -u http://host.docker.internal:80 -json-export /output/nuclei-report.json'
                 }
             }
         }
@@ -257,7 +257,7 @@ pipeline {
         stage('14. Reporting') {
             steps {
                 echo "14. Archiving test artifacts (Sonar results, ZAP reports, AI output)..."
-                archiveArtifacts artifacts: 'zap-report.html, *.json, *.txt, .scannerwork/report-task.txt', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'nuclei-report.json, *.json, *.txt, .scannerwork/report-task.txt', allowEmptyArchive: true
 
                 echo "Pipeline reporting complete. Check artifacts for detailed vulnerabilities, severity levels, and summary."
             }

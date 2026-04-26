@@ -9,3 +9,8 @@ dist/
 coverage/
 *-report.json
 zap-report.html
+chroma_db/
+*.pdf
+*.json
+node_modules/
+.env

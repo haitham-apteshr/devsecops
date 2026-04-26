@@ -1,3 +1,9 @@
 groq
 fpdf2
 streamlit
+chromadb
+sentence-transformers
+pypdf
+langchain
+langchain-community
+langchain-huggingface

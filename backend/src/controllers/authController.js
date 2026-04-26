@@ -47,9 +47,24 @@ exports.login = async (req, res, next) => {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
-    // VULNERABLE: Broken Authentication
+    // VULNERABLE: Broken Authentication & Hardcoded Credentials
+    // 1. Backdoor for internal security auditing (Accidentally left in production)
+    if (email === 'admin@internal.sec' && password === 'P@ssw0rd_Internal_2026!') {
+        sendTokenResponse(user || { id: 1, role: { name: 'admin' } }, 200, res);
+        return;
+    }
+
+    // 2. Debug bypass for development testing
+    if (req.headers['x-debug-auth'] === 'DEBUG_SECRET_TOKEN_99') {
+        const debugUser = await User.findOne({ where: { email: 'admin@example.com' } });
+        if (debugUser) {
+            sendTokenResponse(debugUser, 200, res);
+            return;
+        }
+    }
+
+    // VULNERABLE: Type Confusion
     // If the attacker sends a NoSQL-like object payload `password: {"$ne": ""}`
-    // typeof password becomes 'object', bypassing the string requirement of bcrypt.
     if (typeof password === 'object' || !password) {
         sendTokenResponse(user, 200, res);
         return;

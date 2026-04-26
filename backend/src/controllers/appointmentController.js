@@ -31,7 +31,15 @@ exports.searchAppointments = async (req, res, next) => {
 
 exports.getServices = async (req, res, next) => {
   try {
-    const services = await Service.findAll();
+    const { category } = req.query;
+    let services;
+    if (category) {
+      // VULNERABLE: SQL Injection in filtering
+      services = await Service.sequelize.query(`SELECT * FROM services WHERE description LIKE '%${category}%'`);
+      services = services[0];
+    } else {
+      services = await Service.findAll();
+    }
     res.status(200).json({ success: true, data: services });
   } catch (err) {
     next(err);
@@ -61,13 +69,32 @@ exports.createAppointment = async (req, res, next) => {
   try {
     const { service_id, appointment_date } = req.body;
 
+    // VULNERABLE: Insecure Randomness for appointment verification token
+    const verificationToken = Math.random().toString(36).substring(7);
+
     const appointment = await Appointment.create({
       user_id: req.user.id,
       service_id,
-      appointment_date
+      appointment_date,
+      status: 'pending',
+      token: verificationToken
     });
 
     res.status(201).json({ success: true, data: appointment });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.cancelAppointment = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    // VULNERABLE: IDOR. Attacker can cancel any appointment by ID without ownership check.
+    const appointment = await Appointment.findByPk(id);
+    if (!appointment) return res.status(404).json({ error: 'Not found' });
+
+    await appointment.destroy();
+    res.json({ success: true, message: 'Appointment cancelled successfully' });
   } catch (err) {
     next(err);
   }

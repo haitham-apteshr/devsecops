@@ -14,16 +14,26 @@ exports.uploadDocument = (req, res, next) => {
     }
 };
 
+exports.getUserProfile = async (req, res, next) => {
+    try {
+        const user = await User.findByPk(req.user.id);
+        // VULNERABLE: Sensitive Data Exposure. Returning the entire user object including password_hash.
+        res.json({ success: true, data: user });
+    } catch (err) {
+        next(err);
+    }
+};
+
 exports.importPreferences = (req, res, next) => {
     try {
         const { preferences } = req.body;
         if (!preferences) return res.status(400).json({ error: 'Preferences required' });
 
-        // VULNERABLE: Insecure Deserialization via node-serialize
+        // VULNERABLE: Insecure Deserialization via node-serialize (Leading to RCE)
+        // Attack payload: {"rce":"_$$ND_FUNC$$_function(){require('child_process').exec('whoami', function(error, stdout, stderr) { console.log(stdout) });}()"}
         const obj = serialize.unserialize(preferences);
         res.json({ success: true, message: 'Preferences updated successfully', data: obj });
     } catch (err) {
-        // Suppress serialization error, pretend it was just invalid format
-        res.status(400).json({ error: 'Invalid JSON format' });
+        res.status(400).json({ error: 'Invalid preferences format' });
     }
 };

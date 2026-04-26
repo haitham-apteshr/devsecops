@@ -1,10 +1,11 @@
 const express = require('express');
-const { uploadMiddleware, uploadDocument, importPreferences } = require('../controllers/userController');
+const { uploadMiddleware, uploadDocument, importPreferences, getUserProfile } = require('../controllers/userController');
 const { protect } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
 
 router.use(protect);
+router.get('/profile', getUserProfile);
 router.post('/upload', uploadMiddleware, uploadDocument);
 router.post('/preferences', importPreferences);
 
