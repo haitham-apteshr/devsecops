@@ -1,34 +1,23 @@
 pipeline {
     agent any
 
-    // Declare required tools for the Jenkins environment
     tools {
         nodejs 'node24'
         jdk 'JDK21'
     }
 
-    // Parameters to make the pipeline configurable at runtime
     parameters {
         string(name: 'REPO_URL', defaultValue: 'https://github.com/haitham-apteshr/devsecops.git', description: 'GitHub Repository URL for Checkout')
+        string(name: 'AI_SERVICE_URL', defaultValue: 'http://localhost:8506', description: 'External AI API (start with docker-compose.ai.yml — like SonarQube)')
     }
 
     environment {
-        // Retrieve SonarQube authentication token securely from Jenkins credentials
         SONAR_TOKEN = credentials('sonarqube-token')
-
-        // Groq API key for AI-powered SAST and DAST analysis
-        // Add this in Jenkins: Manage Jenkins -> Credentials -> Secret text -> ID: groq-api-key
-        GROQ_API_KEY = credentials('groq-api-key')
-
-        // Define Docker image tags for consistent building and scanning
         BACKEND_IMAGE = 'devsecops-backend:latest'
         FRONTEND_IMAGE = 'devsecops-frontend:latest'
     }
 
     stages {
-        // -------------------------------------------------------------
-        // Stage 1: Checkout
-        // -------------------------------------------------------------
         stage('1. Checkout') {
             steps {
                 echo "1. Pulling code from Git repository: ${params.REPO_URL}"
@@ -36,9 +25,6 @@ pipeline {
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 2: Verify Environment
-        // -------------------------------------------------------------
         stage('2. Verify Environment') {
             steps {
                 echo "2. Printing versions of node, npm, and java..."
@@ -48,30 +34,18 @@ pipeline {
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 3: Install Dependencies
-        // -------------------------------------------------------------
         stage('3. Install Dependencies') {
             steps {
-                echo "3. Installing backend, frontend, and AI package dependencies..."
+                echo "3. Installing backend and frontend dependencies only (AI runs in external Docker)..."
                 dir('backend') {
                     bat 'npm install'
                 }
                 dir('frontend') {
                     bat 'npm install'
                 }
-                // FIX: Remove conflicting PyFPDF and fpdf packages before installing requirements
-                bat 'pip uninstall pypdf fpdf -y || echo "pypdf or fpdf not installed, skipping"'
-                // FIX: Because uninstalling fpdf can break fpdf2's namespace, force reinstall it.
-                bat 'pip install --force-reinstall fpdf2'
-                // Install Python dependencies for AI Services
-                bat 'pip install -r requirements-ai.txt'
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 4: Build Application
-        // -------------------------------------------------------------
         stage('4. Build Application') {
             steps {
                 echo "4. Building React frontend and preparing backend..."
@@ -84,12 +58,9 @@ pipeline {
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 5: Unit Tests
-        // -------------------------------------------------------------
         stage('5. Unit Tests') {
             steps {
-                echo "5. Executing unit tests. Jenkins will fail if tests return a non-zero exit code."
+                echo "5. Executing unit tests..."
                 dir('backend') {
                     bat 'npm test'
                 }
@@ -99,9 +70,6 @@ pipeline {
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 6: SAST - SonarQube Scan
-        // -------------------------------------------------------------
         stage('6. SAST - SonarQube Scan') {
             steps {
                 echo "6. Running SonarQube scan via npx sonar-scanner..."
@@ -113,7 +81,7 @@ pipeline {
                       -Dsonar.sources=. ^
                       -Dsonar.host.url=http://localhost:9500 ^
                       -Dsonar.login=%SONAR_TOKEN% ^
-                      -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/*.test.js,**/*.test.jsx,**/test/** ^
+                      -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/*.test.js,**/*.test.jsx,**/test/**,**/ai_*.py,**/app.py,**/generate_*.py,**/test_groq.py ^
                       -Dsonar.javascript.node.maxspace=2048 ^
                       -Dsonar.javascript.environments=browser,node
                     """
@@ -121,15 +89,9 @@ pipeline {
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 7: Quality Gate
-        // -------------------------------------------------------------
         stage('7. Quality Gate') {
             steps {
                 echo "7. Checking SonarQube Quality Gate (non-blocking)..."
-                // FIX: SonarQube CE is slow on this machine.
-                // Use a script block with try/catch to properly prevent timeout from failing the stage
-                // The pipeline always continues to security scan stages regardless.
                 script {
                     try {
                         timeout(time: 5, unit: 'MINUTES') {
@@ -142,46 +104,40 @@ pipeline {
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 8: AI SAST Analysis
-        // -------------------------------------------------------------
-        stage('8. AI SAST Analysis') {
+        stage('8. Verify AI Service') {
             steps {
-                echo "8. Executing custom AI SAST script..."
-                // FIX: Wrapped in catchError - if Groq API key is missing or unreachable,
-                // the stage shows UNSTABLE but does NOT abort the pipeline.
+                echo "8. Verifying external AI Docker service (must be running locally, like SonarQube)..."
                 catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                    // Quick connectivity check first
-                    bat 'python test_groq.py'
-                    
-                    echo "Fetching real issues from SonarQube API..."
-                    // Fetch real findings from SonarQube API into sonar-report.json (prioritize target types)
-                    bat 'curl -s -u %SONAR_TOKEN%: "http://localhost:9500/api/issues/search?componentKeys=devsecops-app&resolved=false&types=VULNERABILITY,BUG,CODE_SMELL" -o sonar-report.json'
-                    
-                    bat 'python ai_sast.py'
+                    powershell """
+                        & '${env.WORKSPACE}\\scripts\\wait-for-ai.ps1' -AiUrl '${params.AI_SERVICE_URL}' -MaxWaitSeconds 60
+                    """
                 }
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 9: Build Docker Images
-        // -------------------------------------------------------------
-        stage('9. Build Docker Images') {
+        stage('9. AI SAST Analysis') {
             steps {
-                echo "9. Building Docker images for Backend and Frontend explicitly..."
+                echo "9. Sending SonarQube report to external AI service..."
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    bat 'curl -s -u %SONAR_TOKEN%: "http://localhost:9500/api/issues/search?componentKeys=devsecops-app&resolved=false&types=VULNERABILITY,BUG,SECURITY_HOTSPOT&ps=100" -o sonar-report.json'
+                    powershell """
+                        & '${env.WORKSPACE}\\scripts\\jenkins-ai-sast.ps1' -AiUrl '${params.AI_SERVICE_URL}' -ReportFile sonar-report.json
+                    """
+                }
+            }
+        }
+
+        stage('10. Build Docker Images') {
+            steps {
+                echo "10. Building Docker images for Backend and Frontend..."
                 bat "docker build -t %BACKEND_IMAGE% ./backend"
                 bat "docker build -t %FRONTEND_IMAGE% ./frontend"
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 10: Container Security Scan
-        // -------------------------------------------------------------
-        stage('10. Container Security Scan') {
+        stage('11. Container Security Scan') {
             steps {
-                echo "10. Running Trivy container security scan (Windows native binary)..."
-                // FIX: Use Join-Path to build trivy path - avoids the \t tab-escape bug
-                // that occurs when .\trivy.exe is inside a Groovy string literal.
+                echo "11. Running Trivy container security scan..."
                 powershell '''
                     $trivyExe = Join-Path $PWD.Path "trivy.exe"
                     if (-Not (Test-Path $trivyExe)) {
@@ -189,98 +145,66 @@ pipeline {
                         $release = Invoke-RestMethod -Uri "https://api.github.com/repos/aquasecurity/trivy/releases/latest" -UseBasicParsing
                         $version = $release.tag_name.TrimStart("v")
                         $url = "https://github.com/aquasecurity/trivy/releases/download/v${version}/trivy_${version}_Windows-64bit.zip"
-                        Write-Host "Downloading Trivy v$version from: $url"
                         Invoke-WebRequest -Uri $url -OutFile "trivy.zip" -UseBasicParsing
                         Expand-Archive -Path "trivy.zip" -DestinationPath "." -Force
-                        Write-Host "Trivy v$version downloaded successfully."
-                    } else {
-                        Write-Host "Trivy already exists, skipping download."
                     }
                     & $trivyExe --version
                 '''
-                // Scan images - exit-code 0 reports findings without failing the pipeline
-                bat 'trivy.exe image --severity HIGH,CRITICAL --exit-code 0 --format table %BACKEND_IMAGE%'
-                bat 'trivy.exe image --severity HIGH,CRITICAL --exit-code 0 --format table %FRONTEND_IMAGE%'
+                bat 'trivy.exe image --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format table %BACKEND_IMAGE%'
+                bat 'trivy.exe image --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format table %FRONTEND_IMAGE%'
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 11: Deploy to Staging (Docker Compose)
-        // -------------------------------------------------------------
-        stage('11. Deploy to Staging (Docker Compose)') {
+        stage('12. Deploy to Staging (Docker Compose)') {
             steps {
-                echo "11. Deploying Staging environment via docker-compose..."
-                // FIX: Force-remove stale named containers from previous runs.
-                // The DB uses a fixed container_name which conflicts if not cleaned.
+                echo "12. Deploying app stack only (db + backend + frontend) — AI is external..."
                 bat 'docker rm -f devsecops_db devsecops_backend devsecops_frontend 2>nul & exit 0'
                 bat 'docker-compose up -d --build --remove-orphans'
-
-                echo "Waiting for services to become responsive..."
                 sleep time: 20, unit: 'SECONDS'
-
-                echo "Ensure application is accessible..."
                 bat 'curl -I http://localhost:80 || curl -I http://localhost:5000 || echo "Staging services are up"'
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 12: DAST - Nuclei (Docker)
-        // -------------------------------------------------------------
-        stage('12. DAST - Nuclei (Docker)') {
+        stage('13. DAST - Nuclei (Docker)') {
             steps {
-                echo "12. Running Nuclei vulnerability scan..."
-                // Use Nuclei Docker image to scan the staging application
-                // host.docker.internal is used to reach the host-mapped staging port from within the container
+                echo "13. Running Nuclei vulnerability scan..."
                 catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
                     bat 'docker run --rm -v "%WORKSPACE%":/output projectdiscovery/nuclei:latest -u http://host.docker.internal:80 -json-export /output/nuclei-report.json'
                 }
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 13: AI DAST Analysis
-        // -------------------------------------------------------------
-        stage('13. AI DAST Analysis') {
+        stage('14. AI DAST Analysis') {
             steps {
-                echo "13. Executing custom AI DAST script..."
-                // FIX: Wrapped in catchError - if Groq API key is missing or unreachable,
-                // the stage shows UNSTABLE but does NOT abort the pipeline.
+                echo "14. Sending Nuclei report to external AI service..."
                 catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                    bat 'python ai_dast.py'
+                    powershell """
+                        & '${env.WORKSPACE}\\scripts\\jenkins-ai-dast.ps1' -AiUrl '${params.AI_SERVICE_URL}'
+                    """
                 }
             }
         }
 
-        // -------------------------------------------------------------
-        // Stage 14: Reporting
-        // -------------------------------------------------------------
-        stage('14. Reporting') {
+        stage('15. Reporting') {
             steps {
-                echo "14. Archiving test artifacts (Sonar results, ZAP reports, AI output)..."
-                archiveArtifacts artifacts: 'nuclei-report.json, *.json, *.txt, .scannerwork/report-task.txt', allowEmptyArchive: true
-
-                echo "Pipeline reporting complete. Check artifacts for detailed vulnerabilities, severity levels, and summary."
+                echo "15. Archiving security artifacts..."
+                archiveArtifacts artifacts: 'nuclei-report.json, sonar-report.json, ai_*.json, ai_*.pdf, .scannerwork/report-task.txt', allowEmptyArchive: true
             }
         }
     }
 
-    // -----------------------------------------------------------------
-    // Post Actions
-    // -----------------------------------------------------------------
     post {
         success {
-            echo "==== SUCCESS: Pipeline completed. No severe vulnerabilities identified. ===="
+            echo "==== SUCCESS: Pipeline completed. ===="
         }
         unstable {
-            echo "==== UNSTABLE: Pipeline completed with warnings (AI/Quality Gate issues). Check logs. ===="
+            echo "==== UNSTABLE: Completed with warnings (AI/Quality Gate). Check logs. ===="
         }
         failure {
-            echo "==== FAILURE: Pipeline aborted. Review security scans or build logs. ===="
+            echo "==== FAILURE: Pipeline aborted. Review build logs. ===="
         }
         always {
-            echo "==== CLEANUP: Tearing down containers and wiping workspace... ===="
-            // --volumes removes named volumes, --remove-orphans catches stale containers
-            // 'exit 0' ensures cleanup never fails the build result
+            echo "==== CLEANUP: Tearing down app containers (AI service stays running) ===="
             bat 'docker-compose down --volumes --remove-orphans 2>nul & exit 0'
             bat 'docker rm -f devsecops_db devsecops_backend devsecops_frontend 2>nul & exit 0'
             cleanWs()

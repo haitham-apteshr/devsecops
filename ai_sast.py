@@ -1,112 +1,131 @@
-import sys
+import argparse
 import json
 import os
-from ai_utils import analyze_with_llm, create_pdf_report
+import sys
 
-SAST_SYSTEM_PROMPT = """You are a world-class Cybersecurity Architect and Static Analysis expert. 
-Your goal is to provide deep technical insights into code vulnerabilities.
-When analyzing a vulnerability:
-1. Reference industry standards like OWASP Top 10 or SANS Top 25.
-2. Provide a clear, step-by-step technical explanation of the root cause.
-3. Show a realistic exploit payload or scenario.
-4. Provide a production-ready, secure code fix.
-5. Explain the 'Defense in Depth' strategy for this specific issue.
-"""
+from ai_parsers import parse_sonar_report, read_source_snippet, sort_sonar_issues
+from ai_utils import analyze_with_llm, create_pdf_report, generate_executive_summary
 
-def parse_sast_results(file_path):
-    if not os.path.exists(file_path):
-        print(f"[!] Warning: {file_path} not found.")
-        return []
-        
-    with open(file_path, "r", encoding="utf-8") as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError as e:
-            print(f"[!] Invalid JSON in {file_path}: {e}")
-            return []
+SAST_SYSTEM_PROMPT = """You are a world-class Cybersecurity Architect and Static Analysis expert.
+Analyze code vulnerabilities with production-grade depth:
+1. Map the issue to OWASP Top 10 / CWE where applicable.
+2. Explain the root cause using the provided code snippet when available.
+3. Provide a realistic exploit scenario or attacker workflow.
+4. Deliver a secure, copy-paste-ready code fix in the same language/framework.
+5. Recommend defense-in-depth controls (WAF, monitoring, SAST rules, tests).
+Be precise and actionable — avoid generic textbook definitions."""
+
+DEMO_VULNERABILITIES = [
+    {
+        "type": "VULNERABILITY",
+        "severity": "CRITICAL",
+        "component": "backend/src/controllers/userController.js",
+        "message": "Database query executing with unvalidated user input.",
+        "rule": "javascript:S3649",
+        "line": 42,
+    },
+    {
+        "type": "VULNERABILITY",
+        "severity": "MAJOR",
+        "component": "frontend/src/pages/Dashboard.jsx",
+        "message": "Rendering unescaped user-provided content.",
+        "rule": "javascript:S5131",
+        "line": 106,
+    },
+]
+
+
+def analyze_sast_findings(vulnerabilities, max_issues=10, include_summary=True):
+    sorted_issues = sort_sonar_issues(vulnerabilities)[:max_issues]
+    results = []
+
+    for count, vuln in enumerate(sorted_issues):
+        vuln_type = vuln.get("type", "Unknown")
+        location = vuln.get("component", "Unknown Location")
+        message = vuln.get("message", "No description")
+        severity = vuln.get("severity", "UNKNOWN")
+        rule = vuln.get("rule", "")
+        line = vuln.get("line")
+
+        snippet = read_source_snippet(location, line)
+        extra_context = f"Source code snippet:\n{snippet}" if snippet else ""
+
+        user_prompt = f"""SAST Finding Analysis:
+- Type: {vuln_type}
+- Severity: {severity}
+- Rule: {rule}
+- Location: {location}
+- Line: {line or 'N/A'}
+- Issue: {message}
+
+Analyze thoroughly. If source code is provided, reference specific lines in your remediation."""
+
+        print(f"[*] Analyzing SAST: {vuln_type} @ {location}...")
+        llm_response = analyze_with_llm(
+            SAST_SYSTEM_PROMPT,
+            user_prompt,
+            use_rag=True,
+            extra_context=extra_context,
+        )
+
+        results.append(
+            {
+                "vuln_id": f"SAST-VULN-{count + 1}",
+                "vulnerability_type": vuln_type,
+                "severity": severity,
+                "code_location": location,
+                "line": line,
+                "rule": rule,
+                "description": message,
+                "ai_expert_analysis": llm_response,
+            }
+        )
+
+    summary = None
+    if include_summary and results:
+        print("[*] Generating SAST executive summary...")
+        summary = generate_executive_summary("SAST (Static Analysis)", results)
+
+    return results, summary
+
 
 def main():
-    input_file = "sonar-report.json"
-    if len(sys.argv) > 1:
-        input_file = sys.argv[1]
+    parser = argparse.ArgumentParser(description="AI-enhanced SAST analysis")
+    parser.add_argument("input_file", nargs="?", default="sonar-report.json")
+    parser.add_argument("--max-issues", type=int, default=10)
+    parser.add_argument("--no-summary", action="store_true")
+    args = parser.parse_args()
 
-    # Check if file exists, if not, fallback to a dummy one so Jenkins pipeline doesn't fail immediately in testing
-    if not os.path.exists(input_file):
-        print(f"[{input_file}] not found. Using a dummy SAST vulnerability for demonstration.")
-        vulnerabilities = [
-            {
-                "type": "SQL Injection", 
-                "component": "backend/src/controllers/userController.js", 
-                "message": "Database query executing with unvalidated user input."
-            },
-            {
-                "type": "Cross-Site Scripting (XSS)", 
-                "component": "frontend/src/components/Comments.jsx", 
-                "message": "Rendering unescaped user-provided content."
-            }
-        ]
+    if os.path.exists(args.input_file):
+        vulnerabilities = parse_sonar_report(args.input_file)
     else:
-        vulnerabilities = parse_sast_results(input_file)
+        print(f"[{args.input_file}] not found. Using demo SAST findings.")
+        vulnerabilities = DEMO_VULNERABILITIES
 
-    # Convert object to list if it's a dict (e.g. issues list inside an object)
-    if isinstance(vulnerabilities, dict) and "issues" in vulnerabilities:
-        vulnerabilities = vulnerabilities["issues"]
-    elif not isinstance(vulnerabilities, list):
-        vulnerabilities = []
+    if not vulnerabilities:
+        print("[-] No SAST issues found.")
+        sys.exit(0)
 
-    # Sort vulnerabilities by type (Vulnerability > Bug > Code Smell)
-    type_priority = {
-        "VULNERABILITY": 1,
-        "SECURITY_HOTSPOT": 2,
-        "BUG": 3,
-        "CODE_SMELL": 4
-    }
-    
-    vulnerabilities.sort(key=lambda x: type_priority.get(str(x.get("type", "")).upper(), 5))
-    
-    # Limit analysis to the top 10 issues for maximum quality
-    vulnerabilities = vulnerabilities[:10]
-    
-    results = []
-    
-    for count, vuln in enumerate(vulnerabilities):
-        vuln_type = vuln.get("type", vuln.get("rule", "Unknown Vulnerability"))
-        
-        # Clean up component path
-        vuln_code_location = vuln.get("component", vuln.get("file", "Unknown Location"))
-        if ":" in vuln_code_location:
-            vuln_code_location = vuln_code_location.split(":")[-1]
-            
-        vuln_msg = vuln.get("message", "No description")
-        
-        user_prompt = f"""Vulnerability Analysis Request:
-- Type: {vuln_type}
-- Location: {vuln_code_location}
-- Issue: {vuln_msg}
+    results, summary = analyze_sast_findings(
+        vulnerabilities,
+        max_issues=args.max_issues,
+        include_summary=not args.no_summary,
+    )
 
-Analyze this thoroughly using RAG context if available. Focus on high-impact remediation."""
-        
-        print(f"[*] Analyzing SAST vulnerability: {vuln_type} in {vuln_code_location}...")
-        llm_response = analyze_with_llm(SAST_SYSTEM_PROMPT, user_prompt, use_rag=True)
-        
-        results.append({
-            "vuln_id": f"SAST-VULN-{count+1}",
-            "vulnerability_type": vuln_type,
-            "code_location": vuln_code_location,
-            "description": vuln_msg,
-            "ai_expert_analysis": llm_response
-        })
-        
     with open("ai_sast_output.json", "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=4)
-        
+        json.dump({"summary": summary, "findings": results}, f, indent=4)
+
     print("[+] Saved ai_sast_output.json")
-    
+
     if results:
-        create_pdf_report("AI-Enhanced SAST Security Analysis Report", results, "ai_sast_report.pdf")
+        create_pdf_report(
+            "AI-Enhanced SAST Security Analysis Report",
+            results,
+            "ai_sast_report.pdf",
+            executive_summary=summary,
+        )
         print("[+] Saved ai_sast_report.pdf")
-    else:
-        print("[-] No vulnerabilities found to report on.")
+
 
 if __name__ == "__main__":
     main()

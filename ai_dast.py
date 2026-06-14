@@ -1,119 +1,126 @@
-import sys
+import argparse
 import json
 import os
-from ai_utils import analyze_with_llm, create_pdf_report
+import sys
+
+from ai_parsers import detect_dast_input_file, parse_dast_report, sort_dast_findings
+from ai_utils import analyze_with_llm, create_pdf_report, generate_executive_summary
 
 DAST_SYSTEM_PROMPT = """You are an elite Penetration Tester and Offensive Security Expert.
-Your goal is to validate and provide exploit paths for dynamic vulnerabilities.
-When analyzing a DAST finding:
-1. Explain how a real-world attacker would discover and weaponize this.
-2. Provide a proof-of-concept (PoC) payload or automated script snippet.
-3. Reference relevant OWASP Testing Guide (WSTG) sections.
-4. Detail the impact on Confidentiality, Integrity, and Availability (CIA).
-5. Provide a specific, patched code example or configuration fix.
-"""
+Validate dynamic findings with offensive depth:
+1. Explain discovery and weaponization steps for a real attacker.
+2. Provide a PoC payload, curl command, or short script snippet.
+3. Reference OWASP WSTG sections where relevant.
+4. Assess CIA impact (Confidentiality, Integrity, Availability).
+5. Provide a specific patched code or configuration fix.
+6. State whether this is likely a true positive or false positive and why.
+Be tactical and reproducible — developers must be able to verify your PoC."""
 
-def parse_nuclei_results(file_path):
-    """
-    Parses Nuclei JSON output. Nuclei typically outputs JSONL (one JSON object per line).
-    """
-    if not os.path.exists(file_path):
-        print(f"[!] Warning: {file_path} not found.")
-        return []
-        
-    vulnerabilities = []
-    with open(file_path, "r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                try:
-                    vulnerabilities.append(json.loads(line))
-                except json.JSONDecodeError as e:
-                    print(f"[!] Invalid JSON line in {file_path}: {e}")
-    return vulnerabilities
+DEMO_NUCLEI = [
+    {
+        "source": "nuclei",
+        "type": "Reflected Cross-Site Scripting",
+        "severity": "medium",
+        "url": "http://localhost:80/search?q=%3Cscript%3Ealert%281%29%3C%2Fscript%3E",
+        "description": "Reflected XSS in search parameter.",
+        "template_id": "xss-reflected",
+        "payload": "<script>alert(1)</script>",
+    },
+    {
+        "source": "nuclei",
+        "type": "SQL Injection Detection",
+        "severity": "high",
+        "url": "http://localhost:80/api/appointments/search?query=1%27+OR+1%3D1--",
+        "description": "Potential SQL injection via boolean-based technique.",
+        "template_id": "sql-injection",
+        "payload": "' OR 1=1 --",
+    },
+]
+
+
+def analyze_dast_findings(findings, max_issues=10, include_summary=True, scanner="DAST"):
+    sorted_findings = sort_dast_findings(findings)[:max_issues]
+    results = []
+
+    for count, vuln in enumerate(sorted_findings):
+        user_prompt = f"""{scanner} Pentest Validation Request:
+- Type: {vuln.get('type')}
+- Severity: {vuln.get('severity')}
+- Scanner: {vuln.get('source', scanner).upper()}
+- URL: {vuln.get('url')}
+- Parameter: {vuln.get('param', 'N/A')}
+- Method: {vuln.get('method', 'N/A')}
+- Template/Plugin: {vuln.get('template_id', 'N/A')}
+- Description: {vuln.get('description')}
+- Payload/Evidence: {vuln.get('payload')}
+- Recommended Fix (scanner): {vuln.get('solution', 'N/A')}
+
+Analyze exploitability and provide remediation."""
+
+        print(f"[*] Analyzing DAST: {vuln.get('type')} @ {vuln.get('url')}...")
+        llm_response = analyze_with_llm(DAST_SYSTEM_PROMPT, user_prompt, use_rag=True)
+
+        results.append(
+            {
+                "vuln_id": f"DAST-VULN-{count + 1}",
+                "vulnerability_type": vuln.get("type"),
+                "severity": vuln.get("severity"),
+                "scanner": vuln.get("source", scanner),
+                "target_url": vuln.get("url"),
+                "parameter": vuln.get("param", ""),
+                "description": vuln.get("description"),
+                "payload": vuln.get("payload"),
+                "ai_pentest_analysis": llm_response,
+            }
+        )
+
+    summary = None
+    if include_summary and results:
+        print("[*] Generating DAST executive summary...")
+        summary = generate_executive_summary(f"DAST ({scanner})", results)
+
+    return results, summary
+
 
 def main():
-    # Look for nuclei-report.json instead of zap-report.json
-    input_file = "nuclei-report.json"
-    if len(sys.argv) > 1:
-        input_file = sys.argv[1]
+    parser = argparse.ArgumentParser(description="AI-enhanced DAST analysis (Nuclei + ZAP)")
+    parser.add_argument("input_file", nargs="?", default=None)
+    parser.add_argument("--max-issues", type=int, default=10)
+    parser.add_argument("--no-summary", action="store_true")
+    args = parser.parse_args()
 
-    if not os.path.exists(input_file):
-        print(f"[{input_file}] not found. Using a dummy Nuclei vulnerability for demonstration.")
-        vulnerabilities = [
-            {
-                "info": {"name": "Reflected Cross-Site Scripting", "severity": "medium"},
-                "matched-at": "http://localhost:80/search?q=%3Cscript%3Ealert%281%29%3C%2Fscript%3E",
-                "template-id": "xss-reflected",
-                "extracted-results": ["<script>alert(1)</script>"]
-            },
-            {
-                "info": {"name": "SQL Injection Detection", "severity": "high"},
-                "matched-at": "http://localhost:80/api/users?id=1%27%20OR%20%271%27%3D%271",
-                "template-id": "sql-injection",
-                "description": "Potential SQL injection detected via boolean-based technique."
-            }
-        ]
+    input_file = detect_dast_input_file(args.input_file)
+    scanner_label = "DAST"
+
+    if os.path.exists(input_file):
+        findings, scanner_label = parse_dast_report(input_file)
+        print(f"[*] Loaded {len(findings)} findings from {input_file} ({scanner_label})")
     else:
-        vulnerabilities = parse_nuclei_results(input_file)
+        print(f"[{input_file}] not found. Using demo DAST findings.")
+        findings = DEMO_NUCLEI
+        scanner_label = "nuclei"
 
-    # Sort vulnerabilities by severity (critical > high > medium > low > info)
-    severity_priority = {
-        "critical": 1,
-        "high": 2,
-        "medium": 3,
-        "low": 4,
-        "info": 5
-    }
-    
-    vulnerabilities.sort(key=lambda x: severity_priority.get(x.get("info", {}).get("severity", "").lower(), 6))
-    
-    # Limit analysis to the top 10 issues for maximum quality
-    vulnerabilities = vulnerabilities[:10]
+    if not findings:
+        print("[-] No DAST findings to analyze.")
+        sys.exit(0)
 
-    results = []
-    
-    for count, vuln in enumerate(vulnerabilities):
-        info = vuln.get("info", {})
-        vuln_type = info.get("name", vuln.get("template-id", "Unknown Nuclei Finding"))
-        url = vuln.get("matched-at", "Unknown URL")
-        severity = info.get("severity", "unknown")
-        description = info.get("description", vuln.get("description", "No description available"))
-        
-        # Nuclei sometimes provides the exact payload in 'extracted-results' or it's in the URL
-        extracted = vuln.get("extracted-results", [])
-        payload = extracted[0] if extracted else "Refer to matched URL"
-        
-        user_prompt = f"""Nuclei Pentest Validation Request:
-- Type: {vuln_type}
-- Severity: {severity}
-- URL: {url}
-- Description: {description}
-- Extracted Payload: {payload}
+    results, summary = analyze_dast_findings(
+        findings,
+        max_issues=args.max_issues,
+        include_summary=not args.no_summary,
+        scanner=scanner_label.upper(),
+    )
 
-Analyze this using RAG context. Focus on exploitability and remediation."""
-
-        print(f"[*] Analyzing Nuclei finding: {vuln_type} on {url}...")
-        llm_response = analyze_with_llm(DAST_SYSTEM_PROMPT, user_prompt, use_rag=True)
-        
-        results.append({
-            "vuln_id": f"NUCLEI-VULN-{count+1}",
-            "vulnerability_type": vuln_type,
-            "severity": severity,
-            "target_url": url,
-            "description": description,
-            "ai_pentest_analysis": llm_response
-        })
-        
     with open("ai_dast_output.json", "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=4)
-        
+        json.dump({"summary": summary, "findings": results, "scanner": scanner_label}, f, indent=4)
+
     print("[+] Saved ai_dast_output.json")
-    
+
     if results:
-        create_pdf_report("AI-Enhanced Nuclei Pentest Report", results, "ai_dast_report.pdf")
+        title = f"AI-Enhanced {scanner_label.upper()} Pentest Report"
+        create_pdf_report(title, results, "ai_dast_report.pdf", executive_summary=summary)
         print("[+] Saved ai_dast_report.pdf")
-    else:
-        print("[-] No Nuclei findings found to report on.")
+
 
 if __name__ == "__main__":
     main()

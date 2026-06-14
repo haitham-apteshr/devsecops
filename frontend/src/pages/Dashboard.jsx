@@ -171,7 +171,7 @@ export default function Dashboard() {
                 </p>
                 <div className="flex gap-4">
                   <a 
-                      href="http://localhost:8501" 
+                      href="http://localhost:8506/docs" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="inline-block bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 transition"
