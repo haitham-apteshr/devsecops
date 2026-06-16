@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevSecOps AI Security Console</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111827;
+      --border: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #10b981;
+      --accent2: #3b82f6;
+      --warn: #f59e0b;
+      --bad: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(circle at top, #172554 0%, var(--bg) 45%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .shell { max-width: 1200px; margin: 0 auto; padding: 28px 20px 60px; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 1.6rem; }
+    .subtitle { color: var(--muted); margin-top: 6px; }
+    .status { padding: 10px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border); font-size: .9rem; }
+    .status.ok { border-color: #065f46; color: #6ee7b7; }
+    .status.bad { border-color: #7f1d1d; color: #fca5a5; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+    .tab {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .tab.active { background: #1d4ed8; border-color: #2563eb; }
+    .panel {
+      display: none;
+      background: rgba(17, 24, 39, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 22px;
+    }
+    .panel.active { display: block; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 8px; }
+    input[type=file], input[type=number], select, textarea {
+      width: 100%;
+      background: #0f172a;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    button {
+      margin-top: 14px;
+      background: var(--accent);
+      color: #052e16;
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    button:disabled { opacity: .6; cursor: wait; }
+    .links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+    .links a {
+      color: #93c5fd;
+      text-decoration: none;
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #0f172a;
+    }
+    pre, .result {
+      background: #020617;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      overflow: auto;
+      max-height: 420px;
+      white-space: pre-wrap;
+      font-size: .85rem;
+      line-height: 1.45;
+    }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .card { background: #0f172a; border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+    .card .k { color: var(--muted); font-size: .75rem; text-transform: uppercase; }
+    .card .v { font-size: 1.4rem; font-weight: 700; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <h1>DevSecOps AI Security Console</h1>
+        <div class="subtitle">Upload SonarQube / Nuclei reports, run Groq-powered analysis, and review structured findings.</div>
+      </div>
+      <div id="health" class="status">Checking service...</div>
+    </header>
+
+    <div class="links">
+      <a href="/docs" target="_blank">API Docs</a>
+      <a href="http://localhost:8507" target="_blank">Full Streamlit UI</a>
+      <a href="/health" target="_blank">Health JSON</a>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="sast">SAST Analyzer</button>
+      <button class="tab" data-tab="dast">DAST Analyzer</button>
+      <button class="tab" data-tab="results">Latest Results</button>
+    </div>
+
+    <section id="overview" class="panel active">
+      <div class="cards">
+        <div class="card"><div class="k">Service</div><div class="v">AI API</div></div>
+        <div class="card"><div class="k">Groq</div><div class="v" id="groqStatus">...</div></div>
+        <div class="card"><div class="k">RAG Mode</div><div class="v">Built-in KB</div></div>
+        <div class="card"><div class="k">Port</div><div class="v">8506</div></div>
+      </div>
+      <p>Use the SAST tab for SonarQube JSON and the DAST tab for Nuclei or ZAP JSON. For chat-based pentest assistance, open the Streamlit UI on port <strong>8507</strong>.</p>
+    </section>
+
+    <section id="sast" class="panel">
+      <div class="grid">
+        <div>
+          <label>SonarQube report (JSON)</label>
+          <input id="sastFile" type="file" accept="application/json,.json" />
+          <label style="margin-top:12px">Max issues</label>
+          <input id="sastMax" type="number" min="1" max="20" value="10" />
+          <button id="runSast">Run AI SAST Analysis</button>
+        </div>
+        <div>
+          <label>Executive summary</label>
+          <div id="sastSummary" class="result">No analysis yet.</div>
+        </div>
+      </div>
+      <label style="margin-top:16px">Findings</label>
+      <pre id="sastOutput">[]</pre>
+    </section>
+
+    <section id="dast" class="panel">
+      <div class="grid">
+        <div>
+          <label>Nuclei or ZAP report (JSON / JSONL)</label>
+          <input id="dastFile" type="file" accept="application/json,.json" />
+          <label style="margin-top:12px">Max issues</label>
+          <input id="dastMax" type="number" min="1" max="20" value="10" />
+          <button id="runDast">Run AI DAST Analysis</button>
+        </div>
+        <div>
+          <label>Executive summary</label>
+          <div id="dastSummary" class="result">No analysis yet.</div>
+        </div>
+      </div>
+      <label style="margin-top:16px">Findings</label>
+      <pre id="dastOutput">[]</pre>
+    </section>
+
+    <section id="results" class="panel">
+      <p>Download the latest PDF generated by the API after an analysis run.</p>
+      <div class="links">
+        <a id="pdfSast" href="#" style="display:none">Download SAST PDF</a>
+        <a id="pdfDast" href="#" style="display:none">Download DAST PDF</a>
+      </div>
+      <label style="margin-top:16px">Combined JSON snapshot</label>
+      <pre id="combinedOutput">Run an analysis to populate results.</pre>
+    </section>
+  </div>
+
+  <script>
+    const state = { sast: null, dast: null };
+
+    document.querySelectorAll('.tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    async function refreshHealth() {
+      const el = document.getElementById('health');
+      try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        el.textContent = `Status: ${data.status} | Groq: ${data.groq}`;
+        el.className = 'status ' + (data.status === 'ok' ? 'ok' : 'bad');
+        document.getElementById('groqStatus').textContent = data.groq;
+      } catch (err) {
+        el.textContent = 'Service unreachable';
+        el.className = 'status bad';
+      }
+    }
+
+    function setPdfLink(id, base64, filename) {
+      const a = document.getElementById(id);
+      if (!base64) { a.style.display = 'none'; return; }
+      a.href = 'data:application/pdf;base64,' + base64;
+      a.download = filename || 'report.pdf';
+      a.style.display = 'inline-block';
+    }
+
+    async function analyze(endpoint, fileInput, maxInput, summaryEl, outputEl, pdfLinkId, key) {
+      const file = fileInput.files[0];
+      if (!file) { alert('Choose a JSON report first.'); return; }
+      const btn = event.target;
+      btn.disabled = true;
+      summaryEl.textContent = 'Analyzing with Groq...';
+      try {
+        const form = new FormData();
+        form.append('report', file);
+        const max = maxInput.value || 10;
+        const url = `/api/v1/analyze/${endpoint}?max_issues=${max}&include_summary=true&include_pdf=true`;
+        const res = await fetch(url, { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || res.statusText);
+        state[key] = data;
+        summaryEl.textContent = data.summary || 'Analysis complete.';
+        outputEl.textContent = JSON.stringify(data.findings, null, 2);
+        setPdfLink(pdfLinkId, data.pdf_base64, data.pdf_filename);
+        document.getElementById('combinedOutput').textContent = JSON.stringify(state, null, 2);
+      } catch (err) {
+        summaryEl.textContent = 'Error: ' + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('runSast').addEventListener('click', (e) => analyze(
+      'sast', document.getElementById('sastFile'), document.getElementById('sastMax'),
+      document.getElementById('sastSummary'), document.getElementById('sastOutput'), 'pdfSast', 'sast'
+    ));
+    document.getElementById('runDast').addEventListener('click', (e) => analyze(
+      'dast', document.getElementById('dastFile'), document.getElementById('dastMax'),
+      document.getElementById('dastSummary'), document.getElementById('dastOutput'), 'pdfDast', 'dast'
+    ));
+
+    refreshHealth();
+    setInterval(refreshHealth, 30000);
+  </script>
+</body>
+</html>

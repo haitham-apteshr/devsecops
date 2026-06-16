@@ -8,6 +8,7 @@ COPY requirements-ai-api.txt .
 RUN pip install --no-cache-dir -r requirements-ai-api.txt
 
 COPY ai_api.py ai_utils.py ai_rag.py ai_parsers.py ai_sast.py ai_dast.py ./
+COPY static ./static
 
 ENV RAG_MODE=builtin
 ENV PYTHONUNBUFFERED=1

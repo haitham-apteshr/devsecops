@@ -91,14 +91,13 @@ pipeline {
 
         stage('7. Quality Gate') {
             steps {
-                echo "7. Checking SonarQube Quality Gate (non-blocking)..."
+                echo "7. Waiting for SonarQube analysis and quality gate..."
                 script {
-                    try {
-                        timeout(time: 5, unit: 'MINUTES') {
-                            waitForQualityGate abortPipeline: false
-                        }
-                    } catch (err) {
-                        unstable("Quality Gate timeout or error: ${err.getMessage()}")
+                    def qgStatus = powershell(returnStatus: true, script: """
+                        & '${env.WORKSPACE}\\scripts\\wait-for-quality-gate.ps1' -MaxWaitMinutes 15
+                    """)
+                    if (qgStatus != 0) {
+                        unstable('SonarQube quality gate did not pass within the wait window.')
                     }
                 }
             }
@@ -150,6 +149,8 @@ pipeline {
                     }
                     & $trivyExe --version
                 '''
+                bat 'trivy.exe image --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format json -o trivy-backend.json %BACKEND_IMAGE%'
+                bat 'trivy.exe image --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format json -o trivy-frontend.json %FRONTEND_IMAGE%'
                 bat 'trivy.exe image --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format table %BACKEND_IMAGE%'
                 bat 'trivy.exe image --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format table %FRONTEND_IMAGE%'
             }
@@ -187,8 +188,14 @@ pipeline {
 
         stage('15. Reporting') {
             steps {
-                echo "15. Archiving security artifacts..."
-                archiveArtifacts artifacts: 'nuclei-report.json, sonar-report.json, ai_*.json, ai_*.pdf, .scannerwork/report-task.txt', allowEmptyArchive: true
+                echo "15. Generating consolidated security report and archiving artifacts..."
+                powershell """
+                    & '${env.WORKSPACE}\\scripts\\generate-pipeline-report.ps1' `
+                        -BuildNumber '${env.BUILD_NUMBER}' `
+                        -JobName '${env.JOB_NAME}' `
+                        -BuildUrl '${env.BUILD_URL}'
+                """
+                archiveArtifacts artifacts: 'reports/**, sonar-report.json, nuclei-report.json, quality-gate-result.json, trivy-*.json, ai_*.json, ai_*.pdf, .scannerwork/report-task.txt', allowEmptyArchive: true
             }
         }
     }

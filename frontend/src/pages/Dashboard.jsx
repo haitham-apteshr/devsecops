@@ -169,14 +169,30 @@ export default function Dashboard() {
                 <p className="text-gray-600 mb-6">
                     Accédez à notre système d'analyse de vulnérabilités alimenté par l'IA pour analyser vos rapports SAST/DAST et discuter avec notre Assistant Pentest.
                 </p>
-                <div className="flex gap-4">
+                <div className="flex gap-4 flex-wrap">
                   <a 
-                      href="http://localhost:8506/docs" 
+                      href="http://localhost:8506/ui" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="inline-block bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 transition"
                   >
-                      Lancer l'Analyse IA
+                      Console IA
+                  </a>
+                  <a 
+                      href="http://localhost:8507" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="inline-block bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-800 transition"
+                  >
+                      Interface Streamlit
+                  </a>
+                  <a 
+                      href="http://localhost:8506/docs" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="inline-block bg-slate-700 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 transition"
+                  >
+                      API Docs
                   </a>
                   {/* VULNERABLE: Insecure Session Management (storing sensitive info in plain text) */}
                   <button 

@@ -9,7 +9,7 @@ import tempfile
 from typing import Optional, Union
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from ai_dast import analyze_dast_findings
@@ -54,12 +54,19 @@ def root():
     return {
         "service": "DevSecOps AI Security API",
         "health": "/health",
+        "ui": "/ui",
         "docs": "/docs",
+        "streamlit_ui": "http://localhost:8507",
         "endpoints": {
             "sast": "POST /api/v1/analyze/sast",
             "dast": "POST /api/v1/analyze/dast",
         },
     }
+
+
+@app.get("/ui")
+def ai_console():
+    return FileResponse("static/ai_dashboard.html")
 
 
 def _encode_pdf(path: str) -> tuple[str, str]:
