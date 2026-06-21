@@ -1,5 +1,5 @@
 param(
-    [string]$AiUrl = "http://localhost:8506",
+    [string]$AiUrl = "http://localhost:8306",
     [int]$MaxWaitSeconds = 120
 )
 

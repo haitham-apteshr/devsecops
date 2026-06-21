@@ -8,7 +8,7 @@ pipeline {
 
     parameters {
         string(name: 'REPO_URL', defaultValue: 'https://github.com/haitham-apteshr/devsecops.git', description: 'GitHub Repository URL for Checkout')
-        string(name: 'AI_SERVICE_URL', defaultValue: 'http://localhost:8506', description: 'External AI API (start with docker-compose.ai.yml — like SonarQube)')
+        string(name: 'AI_SERVICE_URL', defaultValue: 'http://localhost:8306', description: 'External AI API (start with docker-compose.ai.yml — like SonarQube)')
     }
 
     environment {

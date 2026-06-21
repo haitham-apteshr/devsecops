@@ -171,7 +171,7 @@ export default function Dashboard() {
                 </p>
                 <div className="flex gap-4 flex-wrap">
                   <a 
-                      href="http://localhost:8506/ui" 
+                      href="http://localhost:8306/ui" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="inline-block bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 transition"
@@ -179,7 +179,7 @@ export default function Dashboard() {
                       Console IA
                   </a>
                   <a 
-                      href="http://localhost:8507" 
+                      href="http://localhost:8307" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="inline-block bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-800 transition"
@@ -187,7 +187,7 @@ export default function Dashboard() {
                       Interface Streamlit
                   </a>
                   <a 
-                      href="http://localhost:8506/docs" 
+                      href="http://localhost:8306/docs" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="inline-block bg-slate-700 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 transition"

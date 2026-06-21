@@ -1,5 +1,5 @@
 param(
-    [string]$AiUrl = "http://localhost:8506",
+    [string]$AiUrl = "http://localhost:8306",
     [string]$ReportFile = "nuclei-report.json",
     [int]$MaxIssues = 10
 )

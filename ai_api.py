@@ -56,7 +56,7 @@ def root():
         "health": "/health",
         "ui": "/ui",
         "docs": "/docs",
-        "streamlit_ui": "http://localhost:8507",
+        "streamlit_ui": "http://localhost:8307",
         "endpoints": {
             "sast": "POST /api/v1/analyze/sast",
             "dast": "POST /api/v1/analyze/dast",

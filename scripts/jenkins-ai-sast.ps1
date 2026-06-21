@@ -1,5 +1,5 @@
 param(
-    [string]$AiUrl = "http://localhost:8506",
+    [string]$AiUrl = "http://localhost:8306",
     [string]$ReportFile = "sonar-report.json",
     [int]$MaxIssues = 10
 )
