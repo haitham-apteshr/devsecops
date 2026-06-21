@@ -23,8 +23,23 @@ if ($LASTEXITCODE -ne 0) {
     throw "curl failed posting SAST report (exit $LASTEXITCODE)"
 }
 
-$response = $raw | ConvertFrom-Json
-if (-not $response.findings) {
+$response = $null
+try {
+    $response = $raw | ConvertFrom-Json
+} catch {
+    throw "Failed to parse AI response as JSON: $raw"
+}
+
+if ($response -and $response.detail -match "No SonarQube issues") {
+    Write-Host "OK: No SonarQube issues found to analyze."
+    @{
+        summary = "No SonarQube issues found."
+        findings = @()
+    } | ConvertTo-Json -Depth 20 | Out-File -Encoding utf8 "ai_sast_output.json"
+    exit 0
+}
+
+if (-not $response -or -not $response.findings) {
     throw "AI SAST response missing findings: $raw"
 }
 

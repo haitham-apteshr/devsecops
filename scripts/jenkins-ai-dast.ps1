@@ -28,8 +28,24 @@ if ($LASTEXITCODE -ne 0) {
     throw "curl failed posting DAST report (exit $LASTEXITCODE)"
 }
 
-$response = $raw | ConvertFrom-Json
-if (-not $response.findings) {
+$response = $null
+try {
+    $response = $raw | ConvertFrom-Json
+} catch {
+    throw "Failed to parse AI response as JSON: $raw"
+}
+
+if ($response -and $response.detail -match "No DAST findings") {
+    Write-Host "OK: No DAST findings found to analyze."
+    @{
+        summary = "No DAST findings found."
+        findings = @()
+        scanner = "N/A"
+    } | ConvertTo-Json -Depth 20 | Out-File -Encoding utf8 "ai_dast_output.json"
+    exit 0
+}
+
+if (-not $response -or -not $response.findings) {
     throw "AI DAST response missing findings: $raw"
 }
 
